@@ -1,0 +1,162 @@
+---
+title: "Análisis Base de Datos Mercado Libre"
+author: "Pablo César Prada"
+date: "2025-04-23"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    collapsed: true
+    smooth_scroll: true
+    theme: journal
+    highlight: kate
+    df_print: paged
+    code_folding: show
+---
+#Base de Datos
+
+```{r message=FALSE, warning=FALSE}
+library(MASS)
+library(dplyr)
+library(ggplot2)
+library(FNN)
+library(mgcv)
+library(rpart)
+library(klaR)
+library(car)
+library(tidyverse)
+library(broom)
+library(rstatix)
+library(ggpubr)
+library(haven)
+library(mfx)
+library(texreg)
+library(car)
+library(forecast)
+library(stats)
+library(strucchange)
+library(tidyverse)
+library(rstatix)
+library(DataExplorer)
+library(readxl)
+library(ROCR)
+library(pscl)
+
+
+```
+```{r message=FALSE, warning=FALSE}
+base_datos <- read_excel("D:\\Desktop\\Merc Libre\\Base Mercado Libre.xlsx")
+base_datos
+```
+```{r}
+summary(base_datos)
+create_report(base_datos)
+```
+```{r}
+base_datos$dum_Fk_Price <- ifelse(base_datos$Rule=="FK_PRICE", 1,0)
+base_datos$dum_Fk_Atrib <- ifelse(base_datos$Rule=="FK_ATTRIBUTE", 1,0)
+base_datos$dum_Fk_Model <- ifelse(base_datos$Rule=="FK_MODEL", 1,0)
+base_datos$dum_Fk_None <- ifelse(base_datos$Rule=="none", 1,0)
+```
+```{r}
+tc<-table(base_datos$Fake,as.factor((base_datos$dum_Fk_Atrib)))
+mosaicplot(tc,color=c("#d8001d","#998cff" ))
+
+tc1<-table(base_datos$Fake,as.factor((base_datos$dum_Fk_Price)))
+mosaicplot(tc1,color=c("#d8001d","#998cff" ))
+
+tc2<-table(base_datos$Fake,as.factor((base_datos$FK_TEST1)))
+mosaicplot(tc2,color=c("#d8001d","#998cff" ))
+
+tc3<-table(base_datos$Fake,as.factor((base_datos$FK_TEST2)))
+mosaicplot(tc3,color=c("#d8001d","#998cff" ))
+
+```
+```{r}
+modelo1 = glm(Fake~Precio+as.factor(Rule)+Score+Moderado+Rollback+FK_TEST1+FK_TEST2, data=base_datos,family = binomial(link = "logit"))
+summary(modelo1)
+predict_mco1 = predict(modelo1, type="response")
+summary(predict_mco1)
+```
+```{r}
+modelo2 = glm(Fake~Precio+as.factor(Rule)+Score+Moderado+Rollback+FK_TEST1+FK_TEST2, data=base_datos,family = binomial)
+summary(modelo2)
+predict_mco2 = predict(modelo2, type="response")
+summary(predict_mco2)
+```
+```{r}
+modelo3 = glm(Fake~Precio+dum_Fk_Model+dum_Fk_Atrib+dum_Fk_Price+dum_Fk_None+Score+Moderado+Rollback+FK_TEST1+FK_TEST2, data=base_datos,family = binomial)
+summary(modelo3)
+predict_mco3 = predict(modelo3, type="response")
+summary(predict_mco3)
+
+```
+```{r}
+modelo4 = glm(Fake~Precio+dum_Fk_Atrib+dum_Fk_Price+dum_Fk_None+Score+FK_TEST1+FK_TEST2, data=base_datos,family = binomial)
+summary(modelo4)
+predict_mco4 = predict(modelo4, type="response")
+summary(predict_mco4)
+```
+```{r}
+modelo5 = glm(Fake~Precio+dum_Fk_Atrib+dum_Fk_Price+Score+FK_TEST1+FK_TEST2, data = base_datos,family = binomial)
+summary(modelo5)
+predict_mco5 = predict(modelo5, type="response")
+summary(predict_mco5)
+```
+```{r}
+model.data <- augment(modelo5) %>% 
+  mutate(index = 1:n())
+
+model.data$Fake <- as.factor(model.data$Fake)
+
+model.data %>% 
+  top_n(10, .std.resid)
+
+ggplot(model.data, aes(x = index, y = .std.resid)) +
+  geom_point(aes(color = Fake), alpha = 0.5) +
+  theme_pubclean()
+
+model.data %>% 
+  dplyr::filter(abs(.std.resid) > 3)
+
+```
+```{r}
+vif(modelo5)
+```
+```{r}
+modelChi10=modelo5$null.deviance - modelo5$deviance
+modelChi10
+
+```
+```{r}
+HandLeme <- modelChi10/modelo5$null.deviance
+HandLeme
+```
+```{r}
+RCoxSnell <- 1 - exp((modelo5$deviance - modelo5$null.deviance)/40372)
+RCoxSnell
+```
+
+```{r}
+Nagel <- RCoxSnell/(1-(exp(-(modelo5$null.deviance/40372))))
+Nagel
+```
+
+```{r}
+predicciones=fitted(modelo5)
+predicciones
+```
+```{r}
+ROCpred<-prediction(predicciones, base_datos$Fake)
+ROCpred<-performance(ROCpred,"tpr","fpr")
+plot(ROCpred, colorize=TRUE,
+     print.cutoffs.at=seq(0.1,by=0.1))
+```
+```{r}
+pR2(modelo5)
+```
+```{r}
+table(Real = base_datos$Fake, predicho = round(fitted(modelo5)))
+```
+
